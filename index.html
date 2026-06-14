@@ -373,13 +373,22 @@
       const rad2 = rad * rad;
       const shimmer = Math.sin(now * 0.004);
 
+      // Ambient life: a slow "breathing" pulse + a gentle per-pixel sway so
+      // the surface is animated even when the cursor is nowhere near it.
+      const tt = now * 0.001;
+      const breathe = 1 + 0.02 * Math.sin(tt * 0.9);
+
       for (let i = 0; i < pixels.length; i++) {
         const px = pixels[i];
-        // current screen position = home (scaled) + live offset
-        const homeSX = cx + px.hx * scale;
-        const homeSY = cy + px.hy * scale;
+        // current screen position = home (scaled, breathing) + live offset
+        const homeSX = cx + px.hx * scale * breathe;
+        const homeSY = cy + px.hy * scale * breathe;
         const sx = homeSX + px.x;
         const sy = homeSY + px.y;
+
+        // ambient sway (additive, independent of the cursor spring)
+        const idleX = Math.sin(tt * 0.8 + px.hy * 0.012) * 2.4;
+        const idleY = Math.cos(tt * 0.66 + px.hx * 0.012) * 2.4;
 
         // --- cursor repel ---
         let glow = 0, grow = 0;
@@ -412,7 +421,7 @@
         ctx.globalAlpha = px.a;
         ctx.fillStyle =
           `rgb(${Math.min(255, px.r * g)},${Math.min(255, px.g * g)},${Math.min(255, px.b * g)})`;
-        ctx.fillRect(sx + px.vx - size / 2, sy + px.vy - size / 2, size, size);
+        ctx.fillRect(sx + px.vx + idleX - size / 2, sy + px.vy + idleY - size / 2, size, size);
       }
 
       ctx.restore();
