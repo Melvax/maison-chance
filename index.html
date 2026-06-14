@@ -263,17 +263,19 @@
   // Live-editable tunables (see control panel). The cursor "glitches" the grid
   // in place and pulls a subset of dots toward itself — no physical repel.
   const P = {
-    GAP:     COARSE ? 16 : 18,  // grid cell size in px [rebuild]
-    DOT:     7.5,               // tile half-size (near GAP/2 -> solid grid)
-    RADIUS:  COARSE ? 95 : 115, // interaction radius around the cursor (px)
+    GAP:     COARSE ? 12 : 11,  // grid cell size in px [rebuild]
+    DOT:     4.8,               // tile half-size (near GAP/2 -> solid grid)
+    RADIUS:  COARSE ? 90 : 110, // interaction radius around the cursor (px)
     PULL:    0.75,              // how strongly pulled tiles chase the cursor
     PULLAMT: 0.5,               // fraction of tiles near the cursor that pull
     EASING:  0.16,              // settle speed (lower = longer trailing wake)
-    GLITCH:  14,                // optional in-place jitter amplitude (px)
+    GLITCH:  12,                // optional in-place jitter amplitude (px)
     DENSITY: 0,                 // optional extra jitter (0 = off, clean)
     GSPEED:  16,                // glitch / colour re-randomise rate (per sec)
     HALO:    1.0,               // square bloom multiplier (1 = flat tiles)
     TEXTURE: 0.6,               // per-tile grain/sheen texture strength (0 = flat)
+    GLOW:    0.5,               // blur+glow bloom layer over the grid (0 = off)
+    BLUR:    5,                 // bloom blur radius (px)
     DECAY:   260,               // distance over which a pulled tile desaturates
     TWINKLE: 0.18,              // idle shimmer amount
     BREATHE: 0.6,              // idle sway amount (px)
@@ -371,6 +373,10 @@
   // Offscreen canvas to read the source image's pixels
   const buf = document.createElement("canvas");
   const bctx = buf.getContext("2d", { willReadFrequently: true });
+
+  // Offscreen canvas for the blur+glow bloom pass
+  const glow = document.createElement("canvas");
+  const gctx = glow.getContext("2d");
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
@@ -586,6 +592,22 @@
       p.draw();
     }
 
+    // blur + glow bloom layer on top of the grid (additive, from a downscaled,
+    // blurred copy of the grid itself)
+    if (P.GLOW > 0) {
+      const gw = Math.max(1, (W * 0.5) | 0), gh = Math.max(1, (H * 0.5) | 0);
+      if (glow.width !== gw || glow.height !== gh) { glow.width = gw; glow.height = gh; }
+      gctx.clearRect(0, 0, gw, gh);
+      gctx.filter = "blur(" + P.BLUR + "px)";
+      gctx.drawImage(canvas, 0, 0, gw, gh);
+      gctx.filter = "none";
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = P.GLOW;
+      ctx.drawImage(glow, 0, 0, W, H);
+      ctx.restore();
+    }
+
     requestAnimationFrame(frame);
   }
 
@@ -622,6 +644,8 @@
     { k: "GSPEED",  label: "Glitch speed",    min: 2,    max: 40,  step: 1 },
     { k: "DOT",     label: "Tile size",       min: 0.6,  max: 12,  step: 0.1 },
     { k: "TEXTURE", label: "Tile texture",    min: 0,    max: 1,   step: 0.05 },
+    { k: "GLOW",    label: "Glow / bloom",    min: 0,    max: 1.5, step: 0.05 },
+    { k: "BLUR",    label: "Blur radius",     min: 0,    max: 20,  step: 0.5 },
     { k: "HALO",    label: "Tile bloom",      min: 1,    max: 4,   step: 0.1 },
     { k: "TWINKLE", label: "Twinkle",         min: 0,    max: 0.8, step: 0.01 },
     { k: "BREATHE", label: "Breathe sway",    min: 0,    max: 4,   step: 0.1 },
