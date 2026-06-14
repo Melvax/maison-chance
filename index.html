@@ -7,7 +7,124 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css" />
+  <style>
+    :root {
+      --bg: #000000;
+      --fg: #f3f1ee;
+      --muted: #d8d4cf;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      overflow: hidden;
+    }
+
+    body {
+      font-family: "Space Mono", monospace;
+      cursor: none;
+    }
+
+    #flower {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 0;
+    }
+
+    .frame {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      padding: 2.4rem 2.8rem;
+      pointer-events: none;
+    }
+
+    /* Title -------------------------------------------------- */
+    .title {
+      position: absolute;
+      top: 2.1rem;
+      left: 2.8rem;
+      font-family: "Playfair Display", serif;
+      font-weight: 500;
+      font-size: clamp(3.5rem, 11vw, 11rem);
+      line-height: 0.9;
+      letter-spacing: 0.01em;
+      background: linear-gradient(180deg, #ffffff 0%, #cfcac4 38%, #8d8983 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      user-select: none;
+    }
+
+    /* Tagline (top right) ------------------------------------ */
+    .tagline {
+      position: absolute;
+      top: 2.5rem;
+      right: 2.8rem;
+      text-align: right;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    /* Vertical date (left) ----------------------------------- */
+    .date {
+      position: absolute;
+      left: 2.05rem;
+      top: 50%;
+      transform: translateY(-50%) rotate(180deg);
+      writing-mode: vertical-rl;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.22em;
+      color: var(--muted);
+    }
+
+    /* Meta (bottom left) ------------------------------------- */
+    .meta {
+      position: absolute;
+      left: 2.8rem;
+      bottom: 2.4rem;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    /* Custom cursor ------------------------------------------ */
+    .cursor {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 22px;
+      height: 22px;
+      z-index: 10;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M3 2 L3 17 L7 13 L10 19 L13 18 L10 12 L16 12 Z' fill='white' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+
+    @media (max-width: 640px) {
+      .title { font-size: 22vw; }
+      .date { display: none; }
+    }
+  </style>
 </head>
 <body>
   <canvas id="flower"></canvas>
@@ -31,6 +148,252 @@
 
   <div class="cursor" id="cursor"></div>
 
-  <script src="script.js"></script>
+  <script>
+  /* LOTUS — cursor-reactive dithered pixel surface.
+   *
+   * The visual content (currently a procedural lotus) is just a SOURCE that gets
+   * sampled into a grid of pixels. The focus here is the INTERACTION: the pixel
+   * grid reacts to the cursor — pixels are pushed away with a soft falloff and
+   * spring back, and pixels near the cursor brighten and grow slightly.
+   *
+   * To swap the placeholder flower for a GIF / video / image later, see
+   * setSource() at the bottom — it is content-agnostic.
+   */
+  (() => {
+    "use strict";
+
+    // ---- Tunable interaction parameters ----------------------------------
+    const CFG = {
+      cell: 9,          // sampling cell size in source px (-> grid density)
+      repelRadius: 150, // px around cursor that gets displaced
+      repelForce: 4.2,  // how hard pixels are pushed away
+      spring: 0.045,    // pull back toward home position
+      damping: 0.82,    // velocity damping (lower = stiffer)
+      hoverGrow: 0.9,   // extra pixel size near cursor
+      hoverGlow: 0.6,   // extra brightness near cursor
+      gap: 1.4,         // gap between pixels (dot-matrix look)
+    };
+
+    const canvas = document.getElementById("flower");
+    const ctx = canvas.getContext("2d");
+
+    // ---- Custom cursor + pointer tracking --------------------------------
+    const cursorEl = document.getElementById("cursor");
+    const mouse = { x: -9999, y: -9999, tx: -9999, ty: -9999, active: false };
+    window.addEventListener("pointermove", (e) => {
+      mouse.tx = e.clientX;
+      mouse.ty = e.clientY;
+      mouse.active = true;
+      cursorEl.style.transform =
+        `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%)`;
+    });
+    window.addEventListener("pointerdown", () => (mouse.down = true));
+    window.addEventListener("pointerup", () => (mouse.down = false));
+    window.addEventListener("pointerleave", () => (mouse.active = false));
+
+    // ---- Source (placeholder lotus) --------------------------------------
+    const FS = 720;
+    const off = document.createElement("canvas");
+    off.width = off.height = FS;
+    const octx = off.getContext("2d");
+
+    function petal(c, L, W, grad) {
+      c.beginPath();
+      c.moveTo(0, 0);
+      c.quadraticCurveTo(W, -L * 0.45, W * 0.18, -L);
+      c.quadraticCurveTo(0, -L * 1.06, -W * 0.18, -L);
+      c.quadraticCurveTo(-W, -L * 0.45, 0, 0);
+      c.closePath();
+      c.fillStyle = grad;
+      c.fill();
+    }
+    function ringGrad(c, L, base, tip) {
+      const g = c.createLinearGradient(0, 0, 0, -L);
+      g.addColorStop(0, base);
+      g.addColorStop(0.55, tip);
+      g.addColorStop(1, "rgba(255,235,245,0.95)");
+      return g;
+    }
+    function drawPlaceholder() {
+      octx.clearRect(0, 0, FS, FS);
+      octx.save();
+      octx.translate(FS / 2, FS / 2);
+      const rings = [
+        { n: 14, L: 300, W: 70, base: "#a8104a", tip: "#ff77b4" },
+        { n: 12, L: 235, W: 62, base: "#c11457", tip: "#ff8cc0" },
+        { n: 10, L: 170, W: 56, base: "#e01e6b", tip: "#ffa6cf" },
+        { n: 8, L: 110, W: 48, base: "#ff3b86", tip: "#ffd36b" },
+      ];
+      rings.forEach((r, ri) => {
+        const o = ri % 2 ? Math.PI / r.n : 0;
+        for (let i = 0; i < r.n; i++) {
+          octx.save();
+          octx.rotate(o + (i / r.n) * Math.PI * 2);
+          petal(octx, r.L, r.W, ringGrad(octx, r.L, r.base, r.tip));
+          octx.restore();
+        }
+      });
+      const core = octx.createRadialGradient(0, 0, 2, 0, 0, 90);
+      core.addColorStop(0, "#fff6c8");
+      core.addColorStop(0.4, "#ffd23f");
+      core.addColorStop(0.8, "#ff9d2e");
+      core.addColorStop(1, "rgba(255,120,40,0)");
+      octx.beginPath();
+      octx.arc(0, 0, 90, 0, Math.PI * 2);
+      octx.fillStyle = core;
+      octx.fill();
+      octx.restore();
+    }
+
+    // ---- Pixel grid ------------------------------------------------------
+    // Each pixel stores its rest position (home, source space) + live offset.
+    let pixels = [];
+    let sourceAnimated = false;
+    let sourceEl = null;
+
+    function samplePixels() {
+      const img = octx.getImageData(0, 0, FS, FS).data;
+      const next = [];
+      const half = FS / 2;
+      for (let y = CFG.cell / 2; y < FS; y += CFG.cell) {
+        for (let x = CFG.cell / 2; x < FS; x += CFG.cell) {
+          const idx = (Math.floor(y) * FS + Math.floor(x)) * 4;
+          const a = img[idx + 3];
+          if (a < 40) continue;
+          const r = img[idx], g = img[idx + 1], b = img[idx + 2];
+          if (r + g + b < 36) continue;
+          next.push({
+            hx: x - half, hy: y - half, // home in source space
+            x: 0, y: 0, vx: 0, vy: 0,   // live screen offset (relative to home)
+            r, g, b, a: a / 255,
+          });
+        }
+      }
+      pixels = next;
+    }
+
+    // For animated sources, refresh colors in place without dropping motion.
+    function resampleColors() {
+      if (!sourceEl) return;
+      octx.clearRect(0, 0, FS, FS);
+      // cover-fit the source into the square
+      const sw = sourceEl.videoWidth || sourceEl.naturalWidth || sourceEl.width;
+      const sh = sourceEl.videoHeight || sourceEl.naturalHeight || sourceEl.height;
+      if (!sw || !sh) return;
+      const s = Math.max(FS / sw, FS / sh);
+      const dw = sw * s, dh = sh * s;
+      octx.drawImage(sourceEl, (FS - dw) / 2, (FS - dh) / 2, dw, dh);
+      const img = octx.getImageData(0, 0, FS, FS).data;
+      for (const px of pixels) {
+        const sx = Math.floor(px.hx + FS / 2);
+        const sy = Math.floor(px.hy + FS / 2);
+        const idx = (sy * FS + sx) * 4;
+        px.r = img[idx]; px.g = img[idx + 1];
+        px.b = img[idx + 2]; px.a = img[idx + 3] / 255;
+      }
+    }
+
+    // ---- Layout ----------------------------------------------------------
+    let W, H, DPR, scale, cx, cy, dot;
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = W * DPR;
+      canvas.height = H * DPR;
+      canvas.style.width = W + "px";
+      canvas.style.height = H + "px";
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      const disp = Math.min(H * 0.92, W * 0.62);
+      scale = disp / FS;
+      dot = Math.max(2, CFG.cell * scale - CFG.gap);
+      cx = W * (W < 760 ? 0.5 : 0.62);
+      cy = H * 0.54;
+    }
+    window.addEventListener("resize", resize);
+
+    // ---- Main loop -------------------------------------------------------
+    const R = () => CFG.repelRadius;
+    function frame(now) {
+      if (sourceAnimated) resampleColors();
+
+      // smooth the pointer for a fluid feel
+      mouse.x += (mouse.tx - mouse.x) * 0.22;
+      mouse.y += (mouse.ty - mouse.y) * 0.22;
+
+      ctx.clearRect(0, 0, W, H);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+
+      const rad = R();
+      const rad2 = rad * rad;
+      const shimmer = Math.sin(now * 0.004);
+
+      for (let i = 0; i < pixels.length; i++) {
+        const px = pixels[i];
+        // current screen position = home (scaled) + live offset
+        const homeSX = cx + px.hx * scale;
+        const homeSY = cy + px.hy * scale;
+        const sx = homeSX + px.x;
+        const sy = homeSY + px.y;
+
+        // --- cursor repel ---
+        let glow = 0, grow = 0;
+        if (mouse.active) {
+          const dx = sx - mouse.x;
+          const dy = sy - mouse.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < rad2) {
+            const d = Math.sqrt(d2) || 0.001;
+            const f = (1 - d / rad);          // 1 at center -> 0 at edge
+            const force = f * f * CFG.repelForce * (mouse.down ? 1.8 : 1);
+            px.vx += (dx / d) * force;
+            px.vy += (dy / d) * force;
+            glow = f * CFG.hoverGlow;
+            grow = f * CFG.hoverGrow;
+          }
+        }
+
+        // --- spring back to home + damping ---
+        px.vx += -px.x * CFG.spring;
+        px.vy += -px.y * CFG.spring;
+        px.vx *= CFG.damping;
+        px.vy *= CFG.damping;
+        px.x += px.vx;
+        px.y += px.vy;
+
+        // --- draw ---
+        const g = 1 + glow + 0.08 * shimmer;
+        const size = dot * (1 + grow);
+        ctx.globalAlpha = px.a;
+        ctx.fillStyle =
+          `rgb(${Math.min(255, px.r * g)},${Math.min(255, px.g * g)},${Math.min(255, px.b * g)})`;
+        ctx.fillRect(sx + px.vx - size / 2, sy + px.vy - size / 2, size, size);
+      }
+
+      ctx.restore();
+      requestAnimationFrame(frame);
+    }
+
+    // ---- Public: swap the source -----------------------------------------
+    // Replace the placeholder with any image / gif / video / canvas.
+    //   setSource(document.querySelector("img.my-gif"), { animated: true });
+    // For a still image: { animated: false } (sampled once).
+    function setSource(el, opts = {}) {
+      sourceEl = el;
+      sourceAnimated = !!opts.animated;
+      const apply = () => { resampleColors(); if (!sourceAnimated) sourceEl = null; };
+      if (el.complete || el.readyState >= 2) apply();
+      else el.addEventListener(el.tagName === "VIDEO" ? "loadeddata" : "load", apply, { once: true });
+    }
+    window.LOTUS = { setSource, config: CFG };
+
+    // ---- Boot ------------------------------------------------------------
+    resize();
+    drawPlaceholder();
+    samplePixels();
+    requestAnimationFrame(frame);
+  })();
+  </script>
 </body>
 </html>
