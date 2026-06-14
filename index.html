@@ -92,6 +92,77 @@
   }
   @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:.9} }
 
+  /* ---- live control panel ---- */
+  #panel {
+    position: fixed;
+    top: 14px; right: 14px;
+    z-index: 5;
+    width: 232px;
+    max-width: calc(100vw - 28px);
+    font-family: "Inter", system-ui, sans-serif;
+    color: #e8e5e0;
+    touch-action: auto;
+  }
+  #panel input, #panel button { touch-action: auto; }
+  #panelToggle {
+    display: block;
+    width: 100%;
+    cursor: pointer;
+    background: rgba(20,20,23,0.85);
+    color: #e8e5e0;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font: 500 10px/1 "Inter", sans-serif;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-align: left;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+  #panelBody {
+    margin-top: 8px;
+    padding: 13px 13px 11px;
+    background: rgba(16,16,19,0.82);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 10px;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    max-height: 78vh;
+    overflow-y: auto;
+  }
+  #panel.collapsed #panelBody { display: none; }
+  .prow { margin-bottom: 11px; }
+  .prow label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #9b9893; margin-bottom: 5px;
+  }
+  .prow label .val { color: #fff; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .prow input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 3px; border-radius: 3px;
+    background: rgba(255,255,255,0.18); outline: none; cursor: pointer;
+  }
+  .prow input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #f4f1ec; border: none; cursor: pointer;
+  }
+  .prow input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border: none; border-radius: 50%;
+    background: #f4f1ec; cursor: pointer;
+  }
+  .pbtns { display: flex; gap: 8px; margin-top: 2px; }
+  .pbtns button {
+    flex: 1; cursor: pointer;
+    background: rgba(255,255,255,0.07); color: #e8e5e0;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+    padding: 7px 8px; font: 500 9px/1 "Inter", sans-serif;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .pbtns button:hover, #panelToggle:hover { background: rgba(255,255,255,0.14); }
+
   /* ---- phones / portrait ---- */
   @media (max-width: 680px), (orientation: portrait) and (max-width: 900px) {
     body { cursor: default; }
@@ -154,6 +225,17 @@
     <div class="hint">Hover to disturb</div>
   </div>
 
+  <div id="panel">
+    <button id="panelToggle" type="button">Parameters &times;</button>
+    <div id="panelBody">
+      <div id="panelRows"></div>
+      <div class="pbtns">
+        <button id="resetBtn" type="button">Reset</button>
+        <button id="copyBtn" type="button">Copy</button>
+      </div>
+    </div>
+  </div>
+
   <img id="src" alt="" style="display:none" src="data:image/jpeg;base64,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" />
 
 <script>
@@ -167,21 +249,27 @@
   // Coarse pointer == touch device; render lighter so phones stay at 60fps.
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
-  // Tunables that define the "membrane" feel
-  const GAP = COARSE ? 7 : 5;     // sample every Nth pixel -> LED grid density
-  const DOT = 2.0;                // base dot radius
-  const RADIUS = 70;              // interaction crater radius (px)
-  const PUSH = 46;                // how hard dots are flung out of the crater
-  const EASING = 0.15;            // high-friction lerp (snap back, no bounce)
+  // Live-editable tunables that define the "membrane" feel (see control panel)
+  const P = {
+    GAP:     COARSE ? 7 : 5,    // sample every Nth pixel -> LED grid density [rebuild]
+    DOT:     2.0,               // base dot radius
+    RADIUS:  COARSE ? 56 : 70,  // interaction crater radius (px)
+    PUSH:    46,                // how hard dots are flung out of the crater
+    EASING:  0.15,              // high-friction lerp (snap back, no bounce)
+    HALO:    COARSE ? 1.9 : 2.4,// outer-glow radius multiplier
+    DECAY:   COARSE ? 56 : 70,  // distance over which a displaced dot desaturates
+    TWINKLE: 0.22,              // idle shimmer amount
+    BREATHE: 0.7,              // idle sway amount (px)
+    SCALE:   1.0,               // flower size multiplier [rebuild]
+  };
   const ALPHA_CUT = 26;          // skip near-black background pixels
-  const HALO = COARSE ? 1.9 : 2.4; // outer-glow radius multiplier (overdraw)
   const DPR_CAP = COARSE ? 1.5 : 2;
 
   let dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
   let W = 0, H = 0;
   let particles = [];
 
-  const mouse = { x: -9999, y: -9999, active: false, radius: RADIUS };
+  const mouse = { x: -9999, y: -9999, active: false };
   let t = 0; // global animation clock (seconds-ish)
 
   // Offscreen canvas to read the source image's pixels
@@ -206,9 +294,9 @@
     // Fit the flower into a centred box, scaled to the viewport.
     // On tall/portrait screens, size by width so the bloom fills the frame.
     const portrait = H > W;
-    const target = portrait
+    const target = (portrait
       ? Math.min(W * 0.92, H * 0.5)
-      : Math.min(W, H) * 0.62;
+      : Math.min(W, H) * 0.62) * P.SCALE;
     const scale = target / Math.max(img.naturalWidth, img.naturalHeight);
     const dw = Math.round(img.naturalWidth * scale);
     const dh = Math.round(img.naturalHeight * scale);
@@ -225,8 +313,8 @@
     const data = bctx.getImageData(0, 0, dw, dh).data;
 
     particles = [];
-    for (let y = 0; y < dh; y += GAP) {
-      for (let x = 0; x < dw; x += GAP) {
+    for (let y = 0; y < dh; y += P.GAP) {
+      for (let x = 0; x < dw; x += P.GAP) {
         const i = (y * dw + x) * 4;
         const r = data[i], g = data[i + 1], b = data[i + 2];
         const lum = (r + g + b) / 3;
@@ -245,7 +333,7 @@
       this.r = r; this.g = g; this.b = b;
       // brighter samples glow a hair larger -> richer compression ring
       const k = Math.min(lum / 255, 1);
-      this.size = DOT * (0.7 + k * 0.7);
+      this.k = k; // brightness factor (drives live dot size + halo)
       this.core = "rgb(" + r + "," + g + "," + b + ")";
       // translucent outer halo -> additive bloom under 'lighter' compositing
       this.halo = "rgba(" + r + "," + g + "," + b + "," + (0.10 + k * 0.22).toFixed(3) + ")";
@@ -267,23 +355,23 @@
       let dist = Math.sqrt(dx * dx + dy * dy);
 
       // gentle idle "breathing" sway so the grid feels alive at rest
-      let tx = this.baseX + Math.sin(t * 0.8 + this.phase) * 0.7;
-      let ty = this.baseY + Math.cos(t * 0.7 + this.phase) * 0.7;
+      let tx = this.baseX + Math.sin(t * 0.8 + this.phase) * P.BREATHE;
+      let ty = this.baseY + Math.cos(t * 0.7 + this.phase) * P.BREATHE;
 
-      if (mouse.active && dist < mouse.radius) {
+      if (mouse.active && dist < P.RADIUS) {
         // proximity-based repulsion: dots nearest the cursor are flung hardest,
         // so the grid expands and scatters (gaps + comet trail) instead of
         // collapsing onto one bright ring
-        const force = (mouse.radius - dist) / mouse.radius; // 1 at centre -> 0 at edge
+        const force = (P.RADIUS - dist) / P.RADIUS; // 1 at centre -> 0 at edge
         const angle = Math.atan2(dy, dx);
-        const push = force * (mouse.radius + PUSH);
+        const push = force * (P.RADIUS + P.PUSH);
         tx = this.baseX + Math.cos(angle) * push;
         ty = this.baseY + Math.sin(angle) * push;
       }
 
       // high-friction linear interpolation toward target
-      this.x += (tx - this.x) * EASING;
-      this.y += (ty - this.y) * EASING;
+      this.x += (tx - this.x) * P.EASING;
+      this.y += (ty - this.y) * P.EASING;
 
       // how far this dot currently sits from its home (drives the colour fade)
       const ddx = this.x - this.baseX, ddy = this.y - this.baseY;
@@ -291,21 +379,22 @@
     }
 
     draw() {
+      const size = P.DOT * (0.7 + this.k * 0.7);
       // idle twinkle: modulate additive brightness + a touch of size
-      const tw = 0.78 + 0.22 * Math.sin(t * this.tw * 2.2 + this.phase);
-      // 1 at home -> 0 once flung a full radius away
-      const lit = Math.max(0, 1 - this.disp / RADIUS);
+      const tw = (1 - P.TWINKLE) + P.TWINKLE * Math.sin(t * this.tw * 2.2 + this.phase);
+      // 1 at home -> 0 once flung the full decay distance away
+      const lit = Math.max(0, 1 - this.disp / P.DECAY);
 
       if (lit > 0.97) {
         // at rest: full glow (halo + vivid core)
         ctx.globalAlpha = tw;
         ctx.fillStyle = this.halo;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * HALO, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, size * P.HALO, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = this.core;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * (0.92 + 0.08 * tw), 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, size * (0.92 + 0.08 * tw), 0, Math.PI * 2);
         ctx.fill();
       } else {
         // displaced: glow fades out, dot decays to a dim desaturated ghost
@@ -313,17 +402,17 @@
           ctx.globalAlpha = tw * lit;
           ctx.fillStyle = this.halo;
           ctx.beginPath();
-          ctx.arc(this.x, this.y, this.size * HALO * lit, 0, Math.PI * 2);
+          ctx.arc(this.x, this.y, size * P.HALO * lit, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = this.core;
           ctx.beginPath();
-          ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+          ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.globalAlpha = (1 - lit) * 0.85;
         ctx.fillStyle = this.ghost;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -363,12 +452,82 @@
   window.addEventListener("touchend", () => { mouse.active = false; });
   window.addEventListener("touchcancel", () => { mouse.active = false; });
 
-  // touch-friendly copy + a slightly larger crater for fingertips
-  if (window.matchMedia("(pointer: coarse)").matches) {
+  // touch-friendly copy
+  if (COARSE) {
     const hint = document.querySelector(".hint");
     if (hint) hint.textContent = "Touch & drag to disturb";
-    mouse.radius = 56;
   }
+
+  // ---- live control panel ----
+  const DEFAULTS = Object.assign({}, P);
+  const CONTROLS = [
+    { k: "RADIUS",  label: "Crater radius",   min: 20,   max: 200, step: 1 },
+    { k: "PUSH",    label: "Repel strength",  min: 0,    max: 200, step: 1 },
+    { k: "EASING",  label: "Snap speed",      min: 0.02, max: 0.5, step: 0.01 },
+    { k: "DECAY",   label: "Desaturate dist", min: 10,   max: 220, step: 1 },
+    { k: "DOT",     label: "Dot size",        min: 0.6,  max: 5,   step: 0.1 },
+    { k: "HALO",    label: "Glow size",       min: 1,    max: 4,   step: 0.1 },
+    { k: "TWINKLE", label: "Twinkle",         min: 0,    max: 0.8, step: 0.01 },
+    { k: "BREATHE", label: "Breathe sway",    min: 0,    max: 4,   step: 0.1 },
+    { k: "GAP",     label: "Grid gap",        min: 3,    max: 14,  step: 1,    rebuild: true },
+    { k: "SCALE",   label: "Flower size",     min: 0.4,  max: 1.6, step: 0.05, rebuild: true },
+  ];
+
+  let rebuildTimer = 0;
+  function rebuildSoon() {
+    clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(build, 90);
+  }
+
+  const rowsEl = document.getElementById("panelRows");
+  const inputs = {};
+  CONTROLS.forEach((c) => {
+    const row = document.createElement("div");
+    row.className = "prow";
+    const lab = document.createElement("label");
+    lab.innerHTML = "<span>" + c.label + "</span><span class='val'></span>";
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = c.min; input.max = c.max; input.step = c.step;
+    input.value = P[c.k];
+    const val = lab.querySelector(".val");
+    const fmt = (v) => (c.step < 1 ? Number(v).toFixed(2) : String(v));
+    val.textContent = fmt(P[c.k]);
+    input.addEventListener("input", () => {
+      P[c.k] = parseFloat(input.value);
+      val.textContent = fmt(P[c.k]);
+      if (c.rebuild) rebuildSoon();
+    });
+    inputs[c.k] = { input, val, fmt };
+    row.appendChild(lab);
+    row.appendChild(input);
+    rowsEl.appendChild(row);
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    Object.assign(P, DEFAULTS);
+    CONTROLS.forEach((c) => {
+      inputs[c.k].input.value = P[c.k];
+      inputs[c.k].val.textContent = inputs[c.k].fmt(P[c.k]);
+    });
+    build();
+  });
+
+  document.getElementById("copyBtn").addEventListener("click", (e) => {
+    const json = JSON.stringify(P, null, 2);
+    const btn = e.currentTarget;
+    const done = () => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1200); };
+    if (navigator.clipboard) navigator.clipboard.writeText(json).then(done, done);
+    else done();
+  });
+
+  const panel = document.getElementById("panel");
+  document.getElementById("panelToggle").addEventListener("click", () => {
+    panel.classList.toggle("collapsed");
+    document.getElementById("panelToggle").firstChild &&
+      (document.getElementById("panelToggle").textContent =
+        panel.classList.contains("collapsed") ? "Parameters +" : "Parameters ×");
+  });
 
   // Debounced resize. On mobile the URL bar growing/shrinking changes only the
   // height by a few dozen px; rebuilding on every such tick causes flicker, so
