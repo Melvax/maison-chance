@@ -31,6 +31,10 @@
     body {
       font-family: "Space Mono", monospace;
       cursor: none;
+      height: 100vh;
+      height: 100dvh;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
     #flower {
@@ -40,6 +44,7 @@
       height: 100%;
       display: block;
       z-index: 0;
+      touch-action: none;
     }
 
     .frame {
@@ -120,9 +125,35 @@
       background-size: contain;
     }
 
+    /* Phones: stack the type so the wordmark never collides with the
+       tagline, drop the vertical date, tighten the margins. */
     @media (max-width: 640px) {
-      .title { font-size: 22vw; }
+      .frame { padding: 1.5rem; }
+      .title {
+        font-size: 16vw;
+        top: 1.5rem;
+        left: 1.5rem;
+      }
+      .tagline {
+        top: 5.6rem;
+        left: 1.5rem;
+        right: auto;
+        text-align: left;
+        font-size: 0.66rem;
+        letter-spacing: 0.12em;
+      }
       .date { display: none; }
+      .meta {
+        left: 1.5rem;
+        bottom: 1.6rem;
+        font-size: 0.66rem;
+      }
+    }
+
+    /* Touch devices have no pointer to draw — hide the custom cursor. */
+    @media (hover: none), (pointer: coarse) {
+      body { cursor: auto; }
+      .cursor { display: none; }
     }
   </style>
 </head>
@@ -187,8 +218,21 @@
       cursorEl.style.transform =
         `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%)`;
     });
-    window.addEventListener("pointerdown", () => (mouse.down = true));
-    window.addEventListener("pointerup", () => (mouse.down = false));
+    window.addEventListener("pointerdown", (e) => {
+      mouse.down = true;
+      mouse.tx = mouse.x = e.clientX;
+      mouse.ty = mouse.y = e.clientY;
+      mouse.active = true;
+    });
+    window.addEventListener("pointerup", (e) => {
+      mouse.down = false;
+      // A lifted finger has no hover state, so let the pixels settle back.
+      if (e.pointerType !== "mouse") mouse.active = false;
+    });
+    window.addEventListener("pointercancel", () => {
+      mouse.down = false;
+      mouse.active = false;
+    });
     window.addEventListener("pointerleave", () => (mouse.active = false));
 
     // ---- Source (placeholder lotus) --------------------------------------
