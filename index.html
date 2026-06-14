@@ -273,6 +273,7 @@
     DENSITY: 0,                 // optional extra jitter (0 = off, clean)
     GSPEED:  16,                // glitch / colour re-randomise rate (per sec)
     HALO:    1.0,               // square bloom multiplier (1 = flat tiles)
+    TEXTURE: 0.6,               // per-tile grain/sheen texture strength (0 = flat)
     DECAY:   260,               // distance over which a pulled tile desaturates
     TWINKLE: 0.18,              // idle shimmer amount
     BREATHE: 0.6,              // idle sway amount (px)
@@ -311,6 +312,61 @@
     nb = nb < 0 ? 0 : nb > 255 ? 255 : nb | 0;
     return "rgb(" + nr + "," + ng + "," + nb + ")";
   }
+
+  // ---- per-tile texture sprites (grain + soft top-left sheen, rounded) ----
+  const ROUND = 0.26;     // corner radius as a fraction of tile size
+  const TEX = [];         // a few variants so tiles don't look identical
+  function buildTextures() {
+    TEX.length = 0;
+    const S = 48;
+    for (let v = 0; v < 4; v++) {
+      const c = document.createElement("canvas");
+      c.width = c.height = S;
+      const x = c.getContext("2d");
+      // fine grain (light + dark speckle)
+      const img = x.createImageData(S, S);
+      for (let i = 0; i < S * S; i++) {
+        const n = Math.random();
+        let val, a;
+        if (n > 0.5) { val = 255; a = (n - 0.5) * 2 * 95; }   // light grain
+        else { val = 0; a = (0.5 - n) * 2 * 80; }             // dark grain
+        img.data[i * 4] = val; img.data[i * 4 + 1] = val;
+        img.data[i * 4 + 2] = val; img.data[i * 4 + 3] = a;
+      }
+      x.putImageData(img, 0, 0);
+      // soft sheen toward the top-left (beaded/sequin look)
+      x.globalCompositeOperation = "lighter";
+      const g = x.createRadialGradient(S * 0.36, S * 0.32, 1, S * 0.5, S * 0.5, S * 0.62);
+      g.addColorStop(0, "rgba(255,255,255,0.45)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      x.fillStyle = g;
+      x.fillRect(0, 0, S, S);
+      // subtle dark inner edge for depth
+      x.globalCompositeOperation = "source-over";
+      x.strokeStyle = "rgba(0,0,0,0.35)";
+      x.lineWidth = 2;
+      roundRectPath(x, 1.5, 1.5, S - 3, S - 3, S * ROUND);
+      x.stroke();
+      // mask everything to the rounded-square shape
+      x.globalCompositeOperation = "destination-in";
+      x.fillStyle = "#fff";
+      roundRectPath(x, 1, 1, S - 2, S - 2, S * ROUND);
+      x.fill();
+      x.globalCompositeOperation = "source-over";
+      TEX.push(c);
+    }
+  }
+  function roundRectPath(c, x, y, w, h, r) {
+    if (c.roundRect) { c.beginPath(); c.roundRect(x, y, w, h, r); return; }
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+  buildTextures();
 
   // Offscreen canvas to read the source image's pixels
   const buf = document.createElement("canvas");
@@ -399,6 +455,7 @@
       this.hueSeed = Math.random(); // random phase for the hover colour shift
       this.gseed = Math.random() * 997 + 3; // seed for the glitch hash
       this.pullRand = Math.random(); // stable -> same tiles pull (no flicker)
+      this.texi = (Math.random() * TEX.length) | 0; // texture variant
     }
 
     // refreshed each sample tick from the GIF's current frame
@@ -482,25 +539,29 @@
           ctx.globalAlpha = tw * this.halA;
           ctx.fillRect(this.x - hs, this.y - hs, hs * 2, hs * 2);
         }
-        ctx.fillStyle = fill;
-        ctx.globalAlpha = tw;
-        ctx.fillRect(this.x - s, this.y - s, d, d);
+        this.tile(fill, tw, s, d);
       } else {
         // displaced: tile fades out, decays to a dim desaturated ghost tile
-        if (lit > 0.02) {
-          ctx.fillStyle = fill;
-          ctx.globalAlpha = tw * lit;
-          ctx.fillRect(this.x - s, this.y - s, d, d);
-        }
+        if (lit > 0.02) this.tile(fill, tw * lit, s, d);
         const lum = this.lum;
         const gr = ((this.r * 0.25 + lum * 0.75) * 0.6) | 0;
         const gg = ((this.g * 0.25 + lum * 0.75) * 0.6) | 0;
         const gb = ((this.b * 0.25 + lum * 0.75) * 0.6) | 0;
-        ctx.globalAlpha = (1 - lit) * 0.85;
-        ctx.fillStyle = "rgb(" + gr + "," + gg + "," + gb + ")";
-        ctx.fillRect(this.x - s, this.y - s, d, d);
+        this.tile("rgb(" + gr + "," + gg + "," + gb + ")", (1 - lit) * 0.85, s, d);
       }
       ctx.globalAlpha = 1;
+    }
+
+    // a rounded, textured tile (grain + sheen overlay)
+    tile(style, alpha, s, d) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = style;
+      roundRectPath(ctx, this.x - s, this.y - s, d, d, s * ROUND);
+      ctx.fill();
+      if (P.TEXTURE > 0) {
+        ctx.globalAlpha = alpha * P.TEXTURE;
+        ctx.drawImage(TEX[this.texi], this.x - s, this.y - s, d, d);
+      }
     }
   }
 
@@ -560,6 +621,7 @@
     { k: "GLITCH",  label: "Jitter amount",   min: 0,    max: 40,  step: 0.5 },
     { k: "GSPEED",  label: "Glitch speed",    min: 2,    max: 40,  step: 1 },
     { k: "DOT",     label: "Tile size",       min: 0.6,  max: 12,  step: 0.1 },
+    { k: "TEXTURE", label: "Tile texture",    min: 0,    max: 1,   step: 0.05 },
     { k: "HALO",    label: "Tile bloom",      min: 1,    max: 4,   step: 0.1 },
     { k: "TWINKLE", label: "Twinkle",         min: 0,    max: 0.8, step: 0.01 },
     { k: "BREATHE", label: "Breathe sway",    min: 0,    max: 4,   step: 0.1 },
