@@ -260,19 +260,21 @@
   // Coarse pointer == touch device; render lighter so phones stay at 60fps.
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
-  // Live-editable tunables that define the "membrane" feel (see control panel)
+  // Live-editable tunables (see control panel). The cursor "glitches" the grid
+  // in place — no physical repel.
   const P = {
     GAP:     COARSE ? 7 : 5,    // sample every Nth pixel -> LED grid density [rebuild]
     DOT:     2.0,               // base dot radius
-    RADIUS:  COARSE ? 56 : 70,  // interaction crater radius (px)
-    PUSH:    46,                // how hard dots are flung out of the crater
-    EASING:  0.15,              // high-friction lerp (snap back, no bounce)
+    RADIUS:  COARSE ? 64 : 80,  // glitch radius around the cursor (px)
+    GLITCH:  9,                 // max per-dot jitter displacement (px)
+    GSPEED:  16,                // how fast the glitch re-randomises (per sec)
+    DENSITY: 0.55,              // fraction of dots in range that glitch each tick
+    EASING:  0.35,              // how fast dots snap back to the grid
     HALO:    COARSE ? 1.9 : 2.4,// outer-glow radius multiplier
-    DECAY:   COARSE ? 56 : 70,  // distance over which a displaced dot desaturates
+    DECAY:   90,                // distance over which a flung dot desaturates
     TWINKLE: 0.22,              // idle shimmer amount
     BREATHE: 0.7,              // idle sway amount (px)
-    HUE:     1.1,               // hover colour-shift amount (max hue rotation, rad)
-    HUESPD:  2.6,               // how fast disturbed dots cycle colour
+    HUE:     1.6,               // colour-glitch amount (max hue rotation, rad)
     SCALE:   1.0,               // flower size multiplier [rebuild]
   };
   const ALPHA_CUT = 26;          // skip near-black background pixels
@@ -288,6 +290,12 @@
 
   const mouse = { x: -9999, y: -9999, active: false };
   let t = 0; // global animation clock (seconds-ish)
+
+  // deterministic per-dot pseudo-random in [0,1) -> drives the glitch jitter
+  function hash(n) {
+    const x = Math.sin(n) * 43758.5453;
+    return x - Math.floor(x);
+  }
 
   // Luma-preserving hue rotation (radians) -> "rgb()" string. Used to give
   // disturbed dots their animated, random colour shift on hover.
@@ -387,6 +395,7 @@
       this.disp = 0; // current displacement from home (set each update)
       this.prox = 0; // 0..1 closeness to cursor (set each update)
       this.hueSeed = Math.random(); // random phase for the hover colour shift
+      this.gseed = Math.random() * 997 + 3; // seed for the glitch hash
     }
 
     // refreshed each sample tick from the GIF's current frame
@@ -400,33 +409,40 @@
     }
 
     update() {
-      let dx = this.x - mouse.x;
-      let dy = this.y - mouse.y;
-      let dist = Math.sqrt(dx * dx + dy * dy);
+      const dx = this.baseX - mouse.x;
+      const dy = this.baseY - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
       // gentle idle "breathing" sway so the grid feels alive at rest
-      let tx = this.baseX + Math.sin(t * 0.8 + this.phase) * P.BREATHE;
-      let ty = this.baseY + Math.cos(t * 0.7 + this.phase) * P.BREATHE;
+      const homeX = this.baseX + Math.sin(t * 0.8 + this.phase) * P.BREATHE;
+      const homeY = this.baseY + Math.cos(t * 0.7 + this.phase) * P.BREATHE;
+
+      let tx = homeX, ty = homeY;
 
       if (mouse.active && dist < P.RADIUS) {
-        // proximity-based repulsion: dots nearest the cursor are flung hardest,
-        // so the grid expands and scatters (gaps + comet trail) instead of
-        // collapsing onto one bright ring
+        // GLITCH (no repel): dots stay on the grid but rapidly jitter by random,
+        // time-quantised, horizontally-biased offsets near the cursor.
         const force = (P.RADIUS - dist) / P.RADIUS; // 1 at centre -> 0 at edge
         this.prox = force;
-        const angle = Math.atan2(dy, dx);
-        const push = force * (P.RADIUS + P.PUSH);
-        tx = this.baseX + Math.cos(angle) * push;
-        ty = this.baseY + Math.sin(angle) * push;
+        const tick = Math.floor(t * P.GSPEED);            // re-randomise rate
+        const on = hash(this.gseed + tick) < P.DENSITY * (0.4 + force); // sparse
+        if (on) {
+          const amp = force * P.GLITCH;
+          const jx = (hash(this.gseed * 1.7 + tick) - 0.5) * 2;
+          const jy = (hash(this.gseed * 3.3 + tick * 1.3) - 0.5) * 2;
+          tx = homeX + jx * amp;            // horizontal-biased digital jitter
+          ty = homeY + jy * amp * 0.4;
+          this.x = tx; this.y = ty;         // snap (no easing) for a hard glitch
+        } else {
+          this.x += (tx - this.x) * P.EASING;
+          this.y += (ty - this.y) * P.EASING;
+        }
       } else {
         this.prox = 0;
+        this.x += (tx - this.x) * P.EASING; // ease back onto the grid
+        this.y += (ty - this.y) * P.EASING;
       }
 
-      // high-friction linear interpolation toward target
-      this.x += (tx - this.x) * P.EASING;
-      this.y += (ty - this.y) * P.EASING;
-
-      // how far this dot currently sits from its home (drives the colour fade)
       const ddx = this.x - this.baseX, ddy = this.y - this.baseY;
       this.disp = Math.sqrt(ddx * ddx + ddy * ddy);
     }
@@ -439,11 +455,13 @@
       // 1 at home -> 0 once flung the full decay distance away
       const lit = Math.max(0, 1 - this.disp / P.DECAY);
 
-      // animated, random colour shift on disturbed/hovered dots
+      // random, stepped colour glitch on dots near the cursor (re-rolls on the
+      // same tick clock as the position jitter -> reads as one glitch)
       let fill = this.core;
       const infl = this.prox > 1 - lit ? this.prox : 1 - lit;
       if (P.HUE > 0 && infl > 0.01) {
-        const a = Math.sin(t * P.HUESPD + this.hueSeed * TAU) * P.HUE * infl;
+        const ctick = Math.floor(t * P.GSPEED);
+        const a = (hash(this.hueSeed * 131 + ctick) - 0.5) * 2 * P.HUE * infl;
         fill = rotateHue(this.r, this.g, this.b, a);
       }
 
@@ -536,16 +554,16 @@
   // ---- live control panel ----
   const DEFAULTS = Object.assign({}, P);
   const CONTROLS = [
-    { k: "RADIUS",  label: "Crater radius",   min: 20,   max: 200, step: 1 },
-    { k: "PUSH",    label: "Repel strength",  min: 0,    max: 200, step: 1 },
-    { k: "EASING",  label: "Snap speed",      min: 0.02, max: 0.5, step: 0.01 },
-    { k: "DECAY",   label: "Desaturate dist", min: 10,   max: 220, step: 1 },
+    { k: "RADIUS",  label: "Glitch radius",   min: 20,   max: 240, step: 1 },
+    { k: "GLITCH",  label: "Glitch shift",    min: 0,    max: 40,  step: 0.5 },
+    { k: "GSPEED",  label: "Glitch speed",    min: 2,    max: 40,  step: 1 },
+    { k: "DENSITY", label: "Glitch density",  min: 0.05, max: 1,   step: 0.05 },
+    { k: "HUE",     label: "Color glitch",    min: 0,    max: 3.14,step: 0.05 },
+    { k: "EASING",  label: "Return speed",    min: 0.05, max: 0.8, step: 0.01 },
     { k: "DOT",     label: "Dot size",        min: 0.6,  max: 5,   step: 0.1 },
     { k: "HALO",    label: "Glow size",       min: 1,    max: 4,   step: 0.1 },
     { k: "TWINKLE", label: "Twinkle",         min: 0,    max: 0.8, step: 0.01 },
     { k: "BREATHE", label: "Breathe sway",    min: 0,    max: 4,   step: 0.1 },
-    { k: "HUE",     label: "Color shift",     min: 0,    max: 3.14,step: 0.05 },
-    { k: "HUESPD",  label: "Shift speed",     min: 0,    max: 8,   step: 0.1 },
     { k: "GAP",     label: "Grid gap",        min: 3,    max: 14,  step: 1,    rebuild: true },
     { k: "SCALE",   label: "Flower size",     min: 0.4,  max: 1.6, step: 0.05, rebuild: true },
   ];
