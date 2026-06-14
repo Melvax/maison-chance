@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>LOTUS — Immerse Yourself</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,6 +21,8 @@
     font-family: "Inter", system-ui, sans-serif;
     overflow: hidden;
     cursor: crosshair;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   #scene { position: fixed; inset: 0; }
@@ -85,6 +87,54 @@
     animation: pulse 2.6s ease-in-out infinite;
   }
   @keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:.9} }
+
+  /* ---- phones / portrait ---- */
+  @media (max-width: 680px), (orientation: portrait) and (max-width: 900px) {
+    body { cursor: default; }
+
+    .ui {
+      padding:
+        calc(env(safe-area-inset-top) + 5vh) 6vw
+        calc(env(safe-area-inset-bottom) + 4.5vh) 6vw;
+    }
+
+    .title {
+      top: auto; left: auto;
+      position: static;
+      font-size: clamp(46px, 17vw, 96px);
+      line-height: 0.95;
+    }
+
+    .tagline {
+      top: auto; right: auto;
+      position: static;
+      text-align: left;
+      margin-top: 1.4vh;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      line-height: 1.8;
+    }
+
+    /* keep date out of the way on small screens */
+    .date { display: none; }
+
+    .footer {
+      bottom: auto; left: auto;
+      position: absolute;
+      left: 6vw;
+      bottom: calc(env(safe-area-inset-bottom) + 4.5vh);
+      font-size: 11px;
+    }
+
+    .hint {
+      right: auto; bottom: auto;
+      position: absolute;
+      right: 6vw;
+      bottom: calc(env(safe-area-inset-bottom) + 4.5vh);
+      text-align: right;
+      font-size: 10px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -142,8 +192,12 @@
   function build() {
     if (!img.complete || !img.naturalWidth) return;
 
-    // Fit the flower into a centred box, scaled to the viewport
-    const target = Math.min(W, H) * 0.62;
+    // Fit the flower into a centred box, scaled to the viewport.
+    // On tall/portrait screens, size by width so the bloom fills the frame.
+    const portrait = H > W;
+    const target = portrait
+      ? Math.min(W * 0.92, H * 0.5)
+      : Math.min(W, H) * 0.62;
     const scale = target / Math.max(img.naturalWidth, img.naturalHeight);
     const dw = Math.round(img.naturalWidth * scale);
     const dh = Math.round(img.naturalHeight * scale);
@@ -154,7 +208,9 @@
     bctx.drawImage(img, 0, 0, dw, dh);
 
     const offsetX = (W - dw) / 2;
-    const offsetY = (H - dh) / 2 - H * 0.02; // nudge up a touch
+    // centre vertically; nudge up on desktop, down a touch on portrait so the
+    // bloom clears the stacked header
+    const offsetY = portrait ? (H - dh) / 2 + H * 0.04 : (H - dh) / 2 - H * 0.02;
     const data = bctx.getImageData(0, 0, dw, dh).data;
 
     particles = [];
@@ -243,9 +299,18 @@
     mouse.active = true;
   }
   window.addEventListener("mousemove", move);
+  window.addEventListener("touchstart", move, { passive: true });
   window.addEventListener("touchmove", move, { passive: true });
   window.addEventListener("mouseleave", () => { mouse.active = false; });
   window.addEventListener("touchend", () => { mouse.active = false; });
+  window.addEventListener("touchcancel", () => { mouse.active = false; });
+
+  // touch-friendly copy + a slightly larger crater for fingertips
+  if (window.matchMedia("(pointer: coarse)").matches) {
+    const hint = document.querySelector(".hint");
+    if (hint) hint.textContent = "Touch & drag to disturb";
+    mouse.radius = 56;
+  }
 
   window.addEventListener("resize", layout);
 
