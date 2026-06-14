@@ -263,14 +263,14 @@
   // Live-editable tunables (see control panel). The cursor "glitches" the grid
   // in place and pulls a subset of dots toward itself — no physical repel.
   const P = {
-    GAP:     COARSE ? 10 : 8,   // sample every Nth pixel -> LED grid density [rebuild]
-    DOT:     3.0,               // base dot radius (chunky LED look)
-    RADIUS:  COARSE ? 70 : 90,  // glitch radius around the cursor (px)
-    GLITCH:  10,                // max per-dot jitter displacement (px)
+    GAP:     COARSE ? 14 : 16,  // sample every Nth pixel -> LED grid density [rebuild]
+    DOT:     4.6,               // base dot radius (chunky LED look)
+    RADIUS:  COARSE ? 80 : 100, // glitch radius around the cursor (px)
+    GLITCH:  14,                // max per-dot jitter displacement (px)
     GSPEED:  16,                // how fast the glitch re-randomises (per sec)
     DENSITY: 0.55,              // fraction of dots in range that glitch each tick
-    PULL:    0.55,              // how far pulled dots are dragged toward the cursor
-    PULLAMT: 0.25,              // fraction of dots that get pulled (vs jitter)
+    PULL:    0.65,              // how far pulled dots are dragged toward the cursor
+    PULLAMT: 0.3,               // fraction of dots that get pulled (vs jitter)
     EASING:  0.35,              // how fast dots snap back to the grid
     HALO:    COARSE ? 1.9 : 2.4,// outer-glow radius multiplier
     DECAY:   140,               // distance over which a flung dot desaturates
@@ -569,11 +569,11 @@
     { k: "PULLAMT", label: "Pull amount",     min: 0,    max: 1,   step: 0.05 },
     { k: "HUE",     label: "Color glitch",    min: 0,    max: 3.14,step: 0.05 },
     { k: "EASING",  label: "Return speed",    min: 0.05, max: 0.8, step: 0.01 },
-    { k: "DOT",     label: "Dot size",        min: 0.6,  max: 5,   step: 0.1 },
+    { k: "DOT",     label: "Dot size",        min: 0.6,  max: 9,   step: 0.1 },
     { k: "HALO",    label: "Glow size",       min: 1,    max: 4,   step: 0.1 },
     { k: "TWINKLE", label: "Twinkle",         min: 0,    max: 0.8, step: 0.01 },
     { k: "BREATHE", label: "Breathe sway",    min: 0,    max: 4,   step: 0.1 },
-    { k: "GAP",     label: "Grid gap",        min: 3,    max: 14,  step: 1,    rebuild: true },
+    { k: "GAP",     label: "Grid gap",        min: 4,    max: 32,  step: 1,    rebuild: true },
     { k: "SCALE",   label: "Flower size",     min: 0.4,  max: 1.6, step: 0.05, rebuild: true },
   ];
 
