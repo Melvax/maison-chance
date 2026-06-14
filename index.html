@@ -272,15 +272,15 @@
     // ---- Tunable interaction parameters ----------------------------------
     const CFG = {
       cell: 9,           // sampling cell size in source px (-> grid density)
-      radius: 165,       // px around cursor that the glitch affects
-      glitchAmount: 26,  // max glitch displacement (px)
-      glitchSize: 30,    // height of a glitch band (px) -> blockiness
-      glitchInterval: 65, // ms between glitch re-randomisations (lower = faster)
-      hoverGrow: 0.55,   // extra pixel size near cursor
-      hoverGlow: 1.0,    // extra brightness near cursor
-      hoverWhite: 0.22,  // how much lit pixels wash toward white on hover
-      hoverScramble: 0.7, // how much pixels shift to animated random colour
-      scrambleSpeed: 6,  // speed of the random colour animation
+      repelRadius: 150,  // px around cursor that gets displaced
+      repelForce: 4.2,   // how hard pixels are pushed away
+      spring: 0.045,     // pull back toward home position
+      damping: 0.82,     // velocity damping (lower = stiffer)
+      hoverGrow: 0.9,    // extra pixel size near cursor
+      hoverGlow: 1.15,   // extra brightness near cursor
+      hoverWhite: 0.4,   // how much lit pixels wash toward white on hover
+      hoverScramble: 0.55, // how much pixels shift to animated random colour
+      scrambleSpeed: 4.5,  // speed of the random colour animation
       gridDim: 42,       // base luminance of the unlit LED dots
       gridAlpha: 0.34,   // base opacity of the unlit LED dots
       gap: 1.4,          // gap between pixels (dot-matrix look)
@@ -441,8 +441,7 @@
     window.addEventListener("resize", resize);
 
     // ---- Main loop -------------------------------------------------------
-    // Cheap deterministic hash -> 0..1, used for the stepped glitch offsets.
-    const hash = (n) => { const s = Math.sin(n) * 43758.5453; return s - Math.floor(s); };
+    const R = () => CFG.repelRadius;
     function frame(now) {
       if (sourceAnimated) resampleColors();
 
@@ -454,10 +453,9 @@
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
 
-      const rad = CFG.radius;
+      const rad = R();
       const rad2 = rad * rad;
       const shimmer = Math.sin(now * 0.004);
-      const gstep = Math.floor(now / CFG.glitchInterval); // glitch time-step
 
       // Ambient life: a slow "breathing" pulse + a gentle per-pixel sway so
       // the surface is animated even when the cursor is nowhere near it.
@@ -466,11 +464,13 @@
 
       for (let i = 0; i < pixels.length; i++) {
         const px = pixels[i];
-        // current screen position = home (scaled, breathing)
-        const sx = cx + px.hx * scale * breathe;
-        const sy = cy + px.hy * scale * breathe;
+        // current screen position = home (scaled, breathing) + live offset
+        const homeSX = cx + px.hx * scale * breathe;
+        const homeSY = cy + px.hy * scale * breathe;
+        const sx = homeSX + px.x;
+        const sy = homeSY + px.y;
 
-        // ambient sway (additive, independent of the cursor)
+        // ambient sway (additive, independent of the cursor spring)
         const idleX = Math.sin(tt * 0.8 + px.hy * 0.012) * 2.4;
         const idleY = Math.cos(tt * 0.66 + px.hx * 0.012) * 2.4;
 
@@ -480,23 +480,23 @@
           const dx = sx - mouse.x;
           const dy = sy - mouse.y;
           const d2 = dx * dx + dy * dy;
-          if (d2 < rad2) f = 1 - Math.sqrt(d2) / rad;   // 1 at center -> 0 at edge
+          if (d2 < rad2) {
+            const d = Math.sqrt(d2) || 0.001;
+            f = 1 - d / rad;                  // 1 at center -> 0 at edge
+            // repel: push the pixel away from the cursor
+            const force = f * f * CFG.repelForce * (mouse.down ? 1.8 : 1);
+            px.vx += (dx / d) * force;
+            px.vy += (dy / d) * force;
+          }
         }
 
-        // --- glitch displacement: blocky, time-stepped tearing near cursor ---
-        // Pixels in the same horizontal band jump together by a random amount
-        // that re-randomises every glitchInterval ms -> a digital glitch, not
-        // a smooth repel.
-        let gx = 0, gy = 0;
-        if (f > 0 && CFG.glitchAmount > 0) {
-          const band = Math.floor(sy / CFG.glitchSize);
-          const amp = f * (mouse.down ? 1.6 : 1) * CFG.glitchAmount;
-          gx = (hash(gstep * 131.7 + band * 37.3) * 2 - 1) * amp;
-          gy = (hash(gstep * 71.9 + band * 13.1 + 5) * 2 - 1) * amp * 0.4;
-          // occasional bigger horizontal tear + per-pixel sparkle of jitter
-          if (hash(gstep * 1.7 + band) > 0.82) gx *= 2.3;
-          gx += (hash(gstep + i * 0.13) * 2 - 1) * amp * 0.25;
-        }
+        // --- spring back to home + damping ---
+        px.vx += -px.x * CFG.spring;
+        px.vy += -px.y * CFG.spring;
+        px.vx *= CFG.damping;
+        px.vy *= CFG.damping;
+        px.x += px.vx;
+        px.y += px.vy;
 
         // --- colour + size ---
         let cr, cg, cb, alpha, size;
@@ -533,7 +533,7 @@
         ctx.globalAlpha = alpha;
         ctx.fillStyle =
           `rgb(${Math.min(255, cr) | 0},${Math.min(255, cg) | 0},${Math.min(255, cb) | 0})`;
-        ctx.fillRect(sx + gx + idleX - size / 2, sy + gy + idleY - size / 2, size, size);
+        ctx.fillRect(sx + px.vx + idleX - size / 2, sy + px.vy + idleY - size / 2, size, size);
       }
 
       ctx.restore();
@@ -558,10 +558,10 @@
     const PARAMS = [
       { k: "cell", min: 4, max: 20, step: 1, rebuild: true },
       { k: "gap", min: 0, max: 5, step: 0.1, relayout: true },
-      { k: "radius", min: 40, max: 360, step: 5 },
-      { k: "glitchAmount", min: 0, max: 80, step: 1 },
-      { k: "glitchSize", min: 6, max: 90, step: 1 },
-      { k: "glitchInterval", min: 16, max: 300, step: 1 },
+      { k: "repelRadius", min: 40, max: 360, step: 5 },
+      { k: "repelForce", min: 0, max: 12, step: 0.1 },
+      { k: "spring", min: 0.005, max: 0.2, step: 0.005 },
+      { k: "damping", min: 0.6, max: 0.97, step: 0.01 },
       { k: "hoverGrow", min: 0, max: 2.5, step: 0.05 },
       { k: "hoverGlow", min: 0, max: 3, step: 0.05 },
       { k: "hoverWhite", min: 0, max: 1, step: 0.02 },
