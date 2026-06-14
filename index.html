@@ -171,6 +171,7 @@
   const GAP = COARSE ? 7 : 5;     // sample every Nth pixel -> LED grid density
   const DOT = 2.0;                // base dot radius
   const RADIUS = 70;              // interaction crater radius (px)
+  const PUSH = 46;                // how hard dots are flung out of the crater
   const EASING = 0.15;            // high-friction lerp (snap back, no bounce)
   const ALPHA_CUT = 26;          // skip near-black background pixels
   const HALO = COARSE ? 1.9 : 2.4; // outer-glow radius multiplier (overdraw)
@@ -248,9 +249,16 @@
       this.core = "rgb(" + r + "," + g + "," + b + ")";
       // translucent outer halo -> additive bloom under 'lighter' compositing
       this.halo = "rgba(" + r + "," + g + "," + b + "," + (0.10 + k * 0.22).toFixed(3) + ")";
+      // desaturated, dimmed "ghost" -> what a dot looks like once flung out of
+      // the lit grid (mix toward its own gray, then darken)
+      const gr = Math.round((r * 0.25 + lum * 0.75) * 0.6);
+      const gg = Math.round((g * 0.25 + lum * 0.75) * 0.6);
+      const gb = Math.round((b * 0.25 + lum * 0.75) * 0.6);
+      this.ghost = "rgb(" + gr + "," + gg + "," + gb + ")";
       // per-particle phase so the idle shimmer twinkles, not pulses in unison
       this.phase = Math.random() * Math.PI * 2;
       this.tw = 0.6 + Math.random() * 0.8; // individual twinkle speed
+      this.disp = 0; // current displacement from home (set each update)
     }
 
     update() {
@@ -263,31 +271,61 @@
       let ty = this.baseY + Math.cos(t * 0.7 + this.phase) * 0.7;
 
       if (mouse.active && dist < mouse.radius) {
-        // push to the exact perimeter -> dense, glowing compression ring
+        // proximity-based repulsion: dots nearest the cursor are flung hardest,
+        // so the grid expands and scatters (gaps + comet trail) instead of
+        // collapsing onto one bright ring
+        const force = (mouse.radius - dist) / mouse.radius; // 1 at centre -> 0 at edge
         const angle = Math.atan2(dy, dx);
-        tx = mouse.x + Math.cos(angle) * mouse.radius;
-        ty = mouse.y + Math.sin(angle) * mouse.radius;
+        const push = force * (mouse.radius + PUSH);
+        tx = this.baseX + Math.cos(angle) * push;
+        ty = this.baseY + Math.sin(angle) * push;
       }
 
       // high-friction linear interpolation toward target
       this.x += (tx - this.x) * EASING;
       this.y += (ty - this.y) * EASING;
+
+      // how far this dot currently sits from its home (drives the colour fade)
+      const ddx = this.x - this.baseX, ddy = this.y - this.baseY;
+      this.disp = Math.sqrt(ddx * ddx + ddy * ddy);
     }
 
     draw() {
       // idle twinkle: modulate additive brightness + a touch of size
       const tw = 0.78 + 0.22 * Math.sin(t * this.tw * 2.2 + this.phase);
-      ctx.globalAlpha = tw;
-      // outer halo (soft bloom)
-      ctx.fillStyle = this.halo;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * HALO, 0, Math.PI * 2);
-      ctx.fill();
-      // solid core (the LED)
-      ctx.fillStyle = this.core;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * (0.92 + 0.08 * tw), 0, Math.PI * 2);
-      ctx.fill();
+      // 1 at home -> 0 once flung a full radius away
+      const lit = Math.max(0, 1 - this.disp / RADIUS);
+
+      if (lit > 0.97) {
+        // at rest: full glow (halo + vivid core)
+        ctx.globalAlpha = tw;
+        ctx.fillStyle = this.halo;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * HALO, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = this.core;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * (0.92 + 0.08 * tw), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // displaced: glow fades out, dot decays to a dim desaturated ghost
+        if (lit > 0.02) {
+          ctx.globalAlpha = tw * lit;
+          ctx.fillStyle = this.halo;
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.size * HALO * lit, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = this.core;
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = (1 - lit) * 0.85;
+        ctx.fillStyle = this.ghost;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
   }
