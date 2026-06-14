@@ -663,9 +663,54 @@
     const gifData = document.getElementById("gifData");
     const gifImg = document.getElementById("srcGif");
     const uri = gifData && gifData.textContent.trim();
-    if (gifImg && uri && uri.startsWith("data:")) {
-      gifImg.src = uri;
-      setSource(gifImg, { animated: true });
+    if (uri && uri.startsWith("data:")) playGif(uri, gifImg);
+
+    // Decode the GIF's frames and play them onto a canvas so the animation
+    // never depends on an <img> being on-screen (an off-screen <img> GIF gets
+    // throttled to a single frame). Falls back to the <img> if the
+    // ImageDecoder API is unavailable.
+    async function playGif(src, fallbackImg) {
+      if (!("ImageDecoder" in window)) {
+        if (fallbackImg) {
+          fallbackImg.src = src;
+          setSource(fallbackImg, { animated: true });
+        }
+        return;
+      }
+      try {
+        const buf = await (await fetch(src)).arrayBuffer();
+        const dec = new ImageDecoder({ data: buf, type: "image/gif" });
+        await dec.tracks.ready;
+        const count = dec.tracks.selectedTrack.frameCount || 1;
+        const frames = [];
+        let total = 0;
+        for (let i = 0; i < count; i++) {
+          const { image } = await dec.decode({ frameIndex: i });
+          const dur = (image.duration || 100000) / 1000; // microseconds -> ms
+          frames.push({ image, dur });
+          total += dur;
+        }
+        const gc = document.createElement("canvas");
+        gc.width = frames[0].image.displayWidth || frames[0].image.codedWidth;
+        gc.height = frames[0].image.displayHeight || frames[0].image.codedHeight;
+        const gctx = gc.getContext("2d");
+        setSource(gc, { animated: true });
+        (function tick(now) {
+          let t = now % total, idx = 0;
+          for (let i = 0; i < frames.length; i++) {
+            if (t < frames[i].dur) { idx = i; break; }
+            t -= frames[i].dur;
+          }
+          gctx.clearRect(0, 0, gc.width, gc.height);
+          gctx.drawImage(frames[idx].image, 0, 0, gc.width, gc.height);
+          requestAnimationFrame(tick);
+        })(0);
+      } catch (e) {
+        if (fallbackImg) {
+          fallbackImg.src = src;
+          setSource(fallbackImg, { animated: true });
+        }
+      }
     }
   })();
   </script>
