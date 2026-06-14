@@ -14,12 +14,16 @@
     --muted: #8a8782;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
+  html, body { height: 100%; width: 100%; }
   body {
     background: var(--bg);
     color: var(--fg);
     font-family: "Inter", system-ui, sans-serif;
+    /* lock the viewport on mobile: no scroll, no rubber-band toolbar shifts */
+    position: fixed;
+    inset: 0;
     overflow: hidden;
+    overscroll-behavior: none;
     cursor: crosshair;
     touch-action: none;
     -webkit-tap-highlight-color: transparent;
@@ -160,14 +164,19 @@
   const ctx = canvas.getContext("2d", { alpha: false });
   const img = document.getElementById("src");
 
-  // Tunables that define the "membrane" feel
-  const GAP = 5;              // sample every Nth pixel -> LED grid density
-  const DOT = 2.0;           // base dot radius
-  const RADIUS = 70;         // interaction crater radius (px)
-  const EASING = 0.15;       // high-friction lerp (snap back, no bounce)
-  const ALPHA_CUT = 26;      // skip near-black background pixels
+  // Coarse pointer == touch device; render lighter so phones stay at 60fps.
+  const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
-  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // Tunables that define the "membrane" feel
+  const GAP = COARSE ? 7 : 5;     // sample every Nth pixel -> LED grid density
+  const DOT = 2.0;                // base dot radius
+  const RADIUS = 70;              // interaction crater radius (px)
+  const EASING = 0.15;            // high-friction lerp (snap back, no bounce)
+  const ALPHA_CUT = 26;          // skip near-black background pixels
+  const HALO = COARSE ? 1.9 : 2.4; // outer-glow radius multiplier (overdraw)
+  const DPR_CAP = COARSE ? 1.5 : 2;
+
+  let dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
   let W = 0, H = 0;
   let particles = [];
 
@@ -179,7 +188,7 @@
   const bctx = buf.getContext("2d", { willReadFrequently: true });
 
   function layout() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
     W = window.innerWidth;
     H = window.innerHeight;
     canvas.width = W * dpr;
@@ -272,7 +281,7 @@
       // outer halo (soft bloom)
       ctx.fillStyle = this.halo;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * 2.4, 0, Math.PI * 2);
+      ctx.arc(this.x, this.y, this.size * HALO, 0, Math.PI * 2);
       ctx.fill();
       // solid core (the LED)
       ctx.fillStyle = this.core;
@@ -323,9 +332,25 @@
     mouse.radius = 56;
   }
 
-  window.addEventListener("resize", layout);
+  // Debounced resize. On mobile the URL bar growing/shrinking changes only the
+  // height by a few dozen px; rebuilding on every such tick causes flicker, so
+  // ignore height-only jitter and rebuild only on real layout changes.
+  let lastW = 0, lastH = 0, rt = 0;
+  function onResize() {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const w = window.innerWidth, h = window.innerHeight;
+      const heightOnlyJitter =
+        w === lastW && Math.abs(h - lastH) < 120 && COARSE;
+      if (heightOnlyJitter) return;
+      lastW = w; lastH = h;
+      layout();
+    }, 150);
+  }
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
 
-  function start() { layout(); frame(); }
+  function start() { lastW = window.innerWidth; lastH = window.innerHeight; layout(); frame(); }
   if (img.complete && img.naturalWidth) start();
   else img.onload = start;
 })();
