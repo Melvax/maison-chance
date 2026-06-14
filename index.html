@@ -261,17 +261,19 @@
   const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
   // Live-editable tunables (see control panel). The cursor "glitches" the grid
-  // in place — no physical repel.
+  // in place and pulls a subset of dots toward itself — no physical repel.
   const P = {
-    GAP:     COARSE ? 7 : 5,    // sample every Nth pixel -> LED grid density [rebuild]
-    DOT:     2.0,               // base dot radius
-    RADIUS:  COARSE ? 64 : 80,  // glitch radius around the cursor (px)
-    GLITCH:  9,                 // max per-dot jitter displacement (px)
+    GAP:     COARSE ? 10 : 8,   // sample every Nth pixel -> LED grid density [rebuild]
+    DOT:     3.0,               // base dot radius (chunky LED look)
+    RADIUS:  COARSE ? 70 : 90,  // glitch radius around the cursor (px)
+    GLITCH:  10,                // max per-dot jitter displacement (px)
     GSPEED:  16,                // how fast the glitch re-randomises (per sec)
     DENSITY: 0.55,              // fraction of dots in range that glitch each tick
+    PULL:    0.55,              // how far pulled dots are dragged toward the cursor
+    PULLAMT: 0.25,              // fraction of dots that get pulled (vs jitter)
     EASING:  0.35,              // how fast dots snap back to the grid
     HALO:    COARSE ? 1.9 : 2.4,// outer-glow radius multiplier
-    DECAY:   90,                // distance over which a flung dot desaturates
+    DECAY:   140,               // distance over which a flung dot desaturates
     TWINKLE: 0.22,              // idle shimmer amount
     BREATHE: 0.7,              // idle sway amount (px)
     HUE:     1.6,               // colour-glitch amount (max hue rotation, rad)
@@ -420,19 +422,24 @@
       let tx = homeX, ty = homeY;
 
       if (mouse.active && dist < P.RADIUS) {
-        // GLITCH (no repel): dots stay on the grid but rapidly jitter by random,
-        // time-quantised, horizontally-biased offsets near the cursor.
+        // No physical repel. A subset of dots get PULLED toward the cursor
+        // (dragging/trailing as it moves); the rest GLITCH-jitter in place.
         const force = (P.RADIUS - dist) / P.RADIUS; // 1 at centre -> 0 at edge
         this.prox = force;
         const tick = Math.floor(t * P.GSPEED);            // re-randomise rate
-        const on = hash(this.gseed + tick) < P.DENSITY * (0.4 + force); // sparse
-        if (on) {
+        if (hash(this.gseed * 5.1 + tick) < P.PULLAMT * force) {
+          // pulled toward the cursor, eased so it drags into a streak
+          const px = this.baseX + (mouse.x - this.baseX) * P.PULL * force;
+          const py = this.baseY + (mouse.y - this.baseY) * P.PULL * force;
+          this.x += (px - this.x) * P.EASING;
+          this.y += (py - this.y) * P.EASING;
+        } else if (hash(this.gseed + tick) < P.DENSITY * (0.4 + force)) {
+          // sparse, horizontally-biased digital jitter, snapped (hard glitch)
           const amp = force * P.GLITCH;
           const jx = (hash(this.gseed * 1.7 + tick) - 0.5) * 2;
           const jy = (hash(this.gseed * 3.3 + tick * 1.3) - 0.5) * 2;
-          tx = homeX + jx * amp;            // horizontal-biased digital jitter
-          ty = homeY + jy * amp * 0.4;
-          this.x = tx; this.y = ty;         // snap (no easing) for a hard glitch
+          this.x = homeX + jx * amp;
+          this.y = homeY + jy * amp * 0.4;
         } else {
           this.x += (tx - this.x) * P.EASING;
           this.y += (ty - this.y) * P.EASING;
@@ -558,6 +565,8 @@
     { k: "GLITCH",  label: "Glitch shift",    min: 0,    max: 40,  step: 0.5 },
     { k: "GSPEED",  label: "Glitch speed",    min: 2,    max: 40,  step: 1 },
     { k: "DENSITY", label: "Glitch density",  min: 0.05, max: 1,   step: 0.05 },
+    { k: "PULL",    label: "Pull strength",   min: 0,    max: 1,   step: 0.05 },
+    { k: "PULLAMT", label: "Pull amount",     min: 0,    max: 1,   step: 0.05 },
     { k: "HUE",     label: "Color glitch",    min: 0,    max: 3.14,step: 0.05 },
     { k: "EASING",  label: "Return speed",    min: 0.05, max: 0.8, step: 0.01 },
     { k: "DOT",     label: "Dot size",        min: 0.6,  max: 5,   step: 0.1 },
