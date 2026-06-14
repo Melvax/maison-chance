@@ -263,17 +263,17 @@
   // Live-editable tunables (see control panel). The cursor "glitches" the grid
   // in place and pulls a subset of dots toward itself — no physical repel.
   const P = {
-    GAP:     COARSE ? 14 : 16,  // sample every Nth pixel -> LED grid density [rebuild]
-    DOT:     4.6,               // base dot radius (chunky LED look)
-    RADIUS:  COARSE ? 80 : 100, // glitch radius around the cursor (px)
-    GLITCH:  14,                // max per-dot jitter displacement (px)
+    GAP:     COARSE ? 16 : 18,  // grid cell size in px [rebuild]
+    DOT:     7.5,               // tile half-size (near GAP/2 -> solid grid)
+    RADIUS:  COARSE ? 95 : 120, // interaction radius around the cursor (px)
+    GLITCH:  16,                // max per-tile jitter displacement (px)
     GSPEED:  16,                // how fast the glitch re-randomises (per sec)
-    DENSITY: 0.55,              // fraction of dots in range that glitch each tick
-    PULL:    0.65,              // how far pulled dots are dragged toward the cursor
-    PULLAMT: 0.3,               // fraction of dots that get pulled (vs jitter)
-    EASING:  0.35,              // how fast dots snap back to the grid
-    HALO:    COARSE ? 1.9 : 2.4,// outer-glow radius multiplier
-    DECAY:   140,               // distance over which a flung dot desaturates
+    DENSITY: 0.4,               // fraction of tiles in range that glitch each tick
+    PULL:    0.9,               // how strongly pulled tiles chase the cursor path
+    PULLAMT: 0.45,              // fraction of tiles that get pulled (vs jitter)
+    EASING:  0.22,              // how fast tiles snap back to the grid
+    HALO:    1.25,              // square bloom multiplier (1 = off, cleaner grid)
+    DECAY:   220,               // distance over which a pulled tile desaturates
     TWINKLE: 0.22,              // idle shimmer amount
     BREATHE: 0.7,              // idle sway amount (px)
     HUE:     1.6,               // colour-glitch amount (max hue rotation, rad)
@@ -291,6 +291,7 @@
   let particles = [];
 
   const mouse = { x: -9999, y: -9999, active: false };
+  const trail = []; // recent cursor positions (for trajectory-following pull)
   let t = 0; // global animation clock (seconds-ish)
 
   // deterministic per-dot pseudo-random in [0,1) -> drives the glitch jitter
@@ -427,10 +428,18 @@
         const force = (P.RADIUS - dist) / P.RADIUS; // 1 at centre -> 0 at edge
         this.prox = force;
         const tick = Math.floor(t * P.GSPEED);            // re-randomise rate
-        if (hash(this.gseed * 5.1 + tick) < P.PULLAMT * force) {
-          // pulled toward the cursor, eased so it drags into a streak
-          const px = this.baseX + (mouse.x - this.baseX) * P.PULL * force;
-          const py = this.baseY + (mouse.y - this.baseY) * P.PULL * force;
+        if (hash(this.gseed * 5.1) < P.PULLAMT) {
+          // PULLED: stream along the cursor's trajectory. Each tile targets a
+          // point on the recent cursor path (its own fixed spot in the trail),
+          // so the pulled tiles smear out following where the cursor went.
+          const tlen = trail.length;
+          let txp = mouse.x, typ = mouse.y;
+          if (tlen > 1) {
+            const idx = (hash(this.gseed * 9.7) * (tlen - 1)) | 0;
+            txp = trail[idx].x; typ = trail[idx].y;
+          }
+          const px = this.baseX + (txp - this.baseX) * P.PULL;
+          const py = this.baseY + (typ - this.baseY) * P.PULL;
           this.x += (px - this.x) * P.EASING;
           this.y += (py - this.y) * P.EASING;
         } else if (hash(this.gseed + tick) < P.DENSITY * (0.4 + force)) {
@@ -455,14 +464,16 @@
     }
 
     draw() {
-      if (this.lum < ALPHA_CUT) return; // dark cell in the current GIF frame
-      const size = P.DOT * (0.7 + this.k * 0.7);
-      // idle twinkle: modulate additive brightness + a touch of size
+      if (this.lum < ALPHA_CUT) return; // dark cell in the current video frame
+      // near-uniform tile size -> reads as a solid GRID, not separate dots
+      const s = P.DOT * (0.82 + this.k * 0.18);
+      const d = s * 2;
+      // idle twinkle: modulate additive brightness
       const tw = (1 - P.TWINKLE) + P.TWINKLE * Math.sin(t * this.tw * 2.2 + this.phase);
       // 1 at home -> 0 once flung the full decay distance away
       const lit = Math.max(0, 1 - this.disp / P.DECAY);
 
-      // random, stepped colour glitch on dots near the cursor (re-rolls on the
+      // random, stepped colour glitch on tiles near the cursor (re-rolls on the
       // same tick clock as the position jitter -> reads as one glitch)
       let fill = this.core;
       const infl = this.prox > 1 - lit ? this.prox : 1 - lit;
@@ -473,39 +484,30 @@
       }
 
       if (lit > 0.97) {
-        // at rest: full glow (halo + vivid core)
+        // at rest: solid tile (+ a faint square bloom)
+        if (P.HALO > 1) {
+          const hs = s * P.HALO;
+          ctx.fillStyle = fill;
+          ctx.globalAlpha = tw * this.halA;
+          ctx.fillRect(this.x - hs, this.y - hs, hs * 2, hs * 2);
+        }
         ctx.fillStyle = fill;
-        ctx.globalAlpha = tw * this.halA;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, size * P.HALO, 0, TAU);
-        ctx.fill();
         ctx.globalAlpha = tw;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, size * (0.92 + 0.08 * tw), 0, TAU);
-        ctx.fill();
+        ctx.fillRect(this.x - s, this.y - s, d, d);
       } else {
-        // displaced: glow fades out, dot decays to a dim desaturated ghost
+        // displaced: tile fades out, decays to a dim desaturated ghost tile
         if (lit > 0.02) {
           ctx.fillStyle = fill;
-          ctx.globalAlpha = tw * this.halA * lit;
-          ctx.beginPath();
-          ctx.arc(this.x, this.y, size * P.HALO * lit, 0, TAU);
-          ctx.fill();
           ctx.globalAlpha = tw * lit;
-          ctx.beginPath();
-          ctx.arc(this.x, this.y, size, 0, TAU);
-          ctx.fill();
+          ctx.fillRect(this.x - s, this.y - s, d, d);
         }
-        // desaturated ghost, computed inline for the few displaced dots
         const lum = this.lum;
         const gr = ((this.r * 0.25 + lum * 0.75) * 0.6) | 0;
         const gg = ((this.g * 0.25 + lum * 0.75) * 0.6) | 0;
         const gb = ((this.b * 0.25 + lum * 0.75) * 0.6) | 0;
         ctx.globalAlpha = (1 - lit) * 0.85;
         ctx.fillStyle = "rgb(" + gr + "," + gg + "," + gb + ")";
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, size, 0, TAU);
-        ctx.fill();
+        ctx.fillRect(this.x - s, this.y - s, d, d);
       }
       ctx.globalAlpha = 1;
     }
@@ -539,11 +541,18 @@
   }
 
   // ---- input ----
+  const TRAIL_LEN = 22; // recent cursor positions pulled tiles stream along
   function move(e) {
-    const t = e.touches ? e.touches[0] : e;
-    mouse.x = t.clientX;
-    mouse.y = t.clientY;
+    const ev = e.touches ? e.touches[0] : e;
+    mouse.x = ev.clientX;
+    mouse.y = ev.clientY;
     mouse.active = true;
+    // record the cursor trajectory so pulled tiles can follow the path
+    const last = trail[trail.length - 1];
+    if (!last || (mouse.x - last.x) ** 2 + (mouse.y - last.y) ** 2 > 9) {
+      trail.push({ x: mouse.x, y: mouse.y });
+      if (trail.length > TRAIL_LEN) trail.shift();
+    }
   }
   window.addEventListener("mousemove", move);
   window.addEventListener("touchstart", move, { passive: true });
