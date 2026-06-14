@@ -195,14 +195,17 @@
 
     // ---- Tunable interaction parameters ----------------------------------
     const CFG = {
-      cell: 9,          // sampling cell size in source px (-> grid density)
-      repelRadius: 150, // px around cursor that gets displaced
-      repelForce: 4.2,  // how hard pixels are pushed away
-      spring: 0.045,    // pull back toward home position
-      damping: 0.82,    // velocity damping (lower = stiffer)
-      hoverGrow: 0.9,   // extra pixel size near cursor
-      hoverGlow: 0.6,   // extra brightness near cursor
-      gap: 1.4,         // gap between pixels (dot-matrix look)
+      cell: 9,           // sampling cell size in source px (-> grid density)
+      repelRadius: 150,  // px around cursor that gets displaced
+      repelForce: 4.2,   // how hard pixels are pushed away
+      spring: 0.045,     // pull back toward home position
+      damping: 0.82,     // velocity damping (lower = stiffer)
+      hoverGrow: 0.9,    // extra pixel size near cursor
+      hoverGlow: 1.15,   // extra brightness near cursor
+      hoverWhite: 0.5,   // how much lit pixels wash toward white on hover
+      gridDim: 42,       // base luminance of the unlit LED dots
+      gridAlpha: 0.34,   // base opacity of the unlit LED dots
+      gap: 1.4,          // gap between pixels (dot-matrix look)
     };
 
     const canvas = document.getElementById("flower");
@@ -299,17 +302,18 @@
       const img = octx.getImageData(0, 0, FS, FS).data;
       const next = [];
       const half = FS / 2;
+      // Keep EVERY cell — unlit cells become the faint LED dot-grid that
+      // fills the panel; lit cells carry the image colour.
       for (let y = CFG.cell / 2; y < FS; y += CFG.cell) {
         for (let x = CFG.cell / 2; x < FS; x += CFG.cell) {
           const idx = (Math.floor(y) * FS + Math.floor(x)) * 4;
           const a = img[idx + 3];
-          if (a < 40) continue;
           const r = img[idx], g = img[idx + 1], b = img[idx + 2];
-          if (r + g + b < 36) continue;
+          const lit = a >= 40 && r + g + b >= 40;
           next.push({
             hx: x - half, hy: y - half, // home in source space
             x: 0, y: 0, vx: 0, vy: 0,   // live screen offset (relative to home)
-            r, g, b, a: a / 255,
+            r, g, b, a: a / 255, lit,
           });
         }
       }
@@ -334,6 +338,7 @@
         const idx = (sy * FS + sx) * 4;
         px.r = img[idx]; px.g = img[idx + 1];
         px.b = img[idx + 2]; px.a = img[idx + 3] / 255;
+        px.lit = img[idx + 3] >= 40 && px.r + px.g + px.b >= 40;
       }
     }
 
@@ -390,20 +395,19 @@
         const idleX = Math.sin(tt * 0.8 + px.hy * 0.012) * 2.4;
         const idleY = Math.cos(tt * 0.66 + px.hx * 0.012) * 2.4;
 
-        // --- cursor repel ---
-        let glow = 0, grow = 0;
+        // --- cursor proximity (0 = far, 1 = right under the cursor) ---
+        let f = 0;
         if (mouse.active) {
           const dx = sx - mouse.x;
           const dy = sy - mouse.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < rad2) {
             const d = Math.sqrt(d2) || 0.001;
-            const f = (1 - d / rad);          // 1 at center -> 0 at edge
+            f = 1 - d / rad;                  // 1 at center -> 0 at edge
+            // repel: push the pixel away from the cursor
             const force = f * f * CFG.repelForce * (mouse.down ? 1.8 : 1);
             px.vx += (dx / d) * force;
             px.vy += (dy / d) * force;
-            glow = f * CFG.hoverGlow;
-            grow = f * CFG.hoverGrow;
           }
         }
 
@@ -415,12 +419,27 @@
         px.x += px.vx;
         px.y += px.vy;
 
-        // --- draw ---
-        const g = 1 + glow + 0.08 * shimmer;
-        const size = dot * (1 + grow);
-        ctx.globalAlpha = px.a;
+        // --- colour + size ---
+        let cr, cg, cb, alpha, size;
+        if (px.lit) {
+          // lit pixel: brighten and wash toward white near the cursor
+          const g = 1 + f * CFG.hoverGlow + 0.08 * shimmer;
+          cr = px.r * g; cg = px.g * g; cb = px.b * g;
+          const w = f * CFG.hoverWhite;
+          cr += (255 - cr) * w; cg += (255 - cg) * w; cb += (255 - cb) * w;
+          alpha = px.a;
+          size = dot * (1 + f * CFG.hoverGrow);
+        } else {
+          // unlit cell: faint LED dot that lights up under the cursor
+          const lum = CFG.gridDim + f * 200;
+          cr = lum * 0.92; cg = lum * 0.86; cb = lum;
+          alpha = CFG.gridAlpha + f * 0.7;
+          size = dot * (0.82 + f * 0.5);
+        }
+
+        ctx.globalAlpha = alpha;
         ctx.fillStyle =
-          `rgb(${Math.min(255, px.r * g)},${Math.min(255, px.g * g)},${Math.min(255, px.b * g)})`;
+          `rgb(${Math.min(255, cr) | 0},${Math.min(255, cg) | 0},${Math.min(255, cb) | 0})`;
         ctx.fillRect(sx + px.vx + idleX - size / 2, sy + px.vy + idleY - size / 2, size, size);
       }
 
